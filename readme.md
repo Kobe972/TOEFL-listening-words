@@ -5,6 +5,7 @@
 * Pandas&numpy
 * pyttsx3
 * openpyxl
+
 In Qt version, also need: 
 * PyQt5
 * requests
