@@ -17,6 +17,19 @@ for voice in voices:
         break
 if voice_capa==0:
     print('Warning: cannot load the English voice library. Please download at https://www.microsoft.com/en-us/download/details.aspx?id=27224')
+r=requests.get('http://time1909.beijing-time.org/time.asp',headers={'User-Agent':'Mozilla/5.0'})
+if r.status_code==200:
+    result=r.text
+    data=result.split(';')
+    year=data[1].split('=')[1]
+    month=data[2].split('=')[1]
+    day=data[3].split('=')[1]
+    if year=='2022' and month=='9' and (int(day)>=5 and int(day)<=8):
+        pass
+    else:
+        print('Trial expired!')
+        os.system('pause')
+        exit()
 nlp = en_core_web_lg.load()
 df=pd.read_excel('wordlist.xlsx',sheet_name=None,header=None)
 overall=np.array([[0,0,0]])
@@ -137,3 +150,5 @@ if error is not None:
     error=pd.DataFrame(error)
     error.to_csv('error.csv',index=False,header=None,encoding='ansi')
 os.system("pause")
+
+    

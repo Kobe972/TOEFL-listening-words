@@ -1,5 +1,5 @@
 # -*- coding: gbk -*-
-from PyQt5.QtCore import QCoreApplication
+from PyQt5.QtCore import QCoreApplication, QTimer
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.Qt import *
@@ -10,6 +10,7 @@ import random
 import os
 import warnings
 import requests
+import pickle
 import json
 from pydub import AudioSegment
 from pydub.playback import play
@@ -28,9 +29,9 @@ nlp=None
 test=None
 overall=np.array([[0,0,0]])
 score=0
-window=None
 test_idx=None
 answers=None
+isRetest=False
 def pronounce(phrase):
     url='https://dict.youdao.com/dictvoice?audio='+phrase.replace(' ','+')
     try:
@@ -68,9 +69,18 @@ class MainPanel(QWidget):
         self.qls.addWidget(self.choiceSheetPanel)
         confirm=QPushButton('确认')
         confirm.clicked.connect(lambda:self.confirm())
+        retest=QPushButton('返回主菜单')
+        retest.clicked.connect(lambda:self.retest())
         self.button_layout.addWidget(confirm)
+        self.button_layout.addWidget(retest)
         index = self.qls.currentIndex()
         self.qls.setCurrentIndex(index + 1)
+    def retest(self):
+        global isRetest
+        reply = QMessageBox.question(self, 'Notify', 'You sure to retest?',QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply==QMessageBox.Yes:
+            isRetest=True
+            self.close()
     def NextTextQuestion(self):
         global test_idx
         global overall
@@ -158,7 +168,8 @@ class MainPanel(QWidget):
         elif self.dictation:
             choice=self.dictationQuizPanel.selected_text
             if choice!=self.answer:
-                msg_box = QMessageBox(QMessageBox.Warning, "Wrong Answer", "The right answer is "+test[test_idx[self.progress]][2])
+                self.dictationQuizPanel.setBold(self.answer)
+                msg_box = QMessageBox(QMessageBox.Warning, "Wrong Answer", "The right answer is \""+test[test_idx[self.progress]][2]+"\"")
                 msg_box.exec_()
                 to_append=test[[test_idx[self.progress]],:]
                 to_append[0][1]='Confounder:'+choice
@@ -191,7 +202,8 @@ class MainPanel(QWidget):
         else:
             choice=self.textQuizPanel.selected_text
             if choice!=self.answer:
-                msg_box = QMessageBox(QMessageBox.Warning, "Wrong Answer", "The right answer is "+test[test_idx[self.progress]][0])
+                self.textQuizPanel.setBold(self.answer)
+                msg_box = QMessageBox(QMessageBox.Warning, "Wrong Answer", "The right answer is \""+test[test_idx[self.progress]][0]+"\"")
                 msg_box.exec_()
                 to_append=test[[test_idx[self.progress]],:]
                 to_append[0][1]='Confounder:'+choice
@@ -215,7 +227,8 @@ class MainPanel(QWidget):
             if self.progress==len(test_idx):
                 msg_box = QMessageBox(QMessageBox.Warning, "Completed", "Your score is "+str(float(score)/test.shape[0]*100))
                 msg_box.exec_()
-                QCoreApplication.instance().quit()
+                isRetest=True
+                self.close()
                 return
             self.NextTextQuestion()
 class StartPanel(QWidget):
@@ -234,6 +247,7 @@ class Banner(QWidget):
         left=QPushButton('<')
         right=QPushButton('>')
         self.banner=QPushButton()
+        self.banner_update_timer=QTimer(self)
         left.setFixedSize(int(480*0.05),150)
         right.setFixedSize(int(480*0.05),150)
         self.banner.setFixedSize(int(480),150)
@@ -244,6 +258,8 @@ class Banner(QWidget):
         grid.addWidget(self.banner)
         grid.addWidget(right)
         self.setLayout(grid)
+        self.banner_update_timer.timeout.connect(self.increase)
+        self.banner_update_timer.start(3000)
         self.load()
         self.setIndex(0)
     def load(self):
@@ -278,11 +294,9 @@ class Banner(QWidget):
         self.banner.setIcon(QIcon(pixmap))
         self.banner.setIconSize(self.banner.size())
     def increase(self):
-        if self.index<len(self.urls)-1:
-            self.setIndex(self.index+1)
+        self.setIndex((self.index+1)%len(self.urls))
     def decrease(self):
-        if self.index>0:
-            self.setIndex(self.index-1)
+        self.setIndex((self.index-1)%len(self.urls))
 class ChoiceSheetPanel(QWidget):
     def __init__(self):
         super(ChoiceSheetPanel,self).__init__()
@@ -319,6 +333,12 @@ class TextQuizPanel(QWidget):
             self.selected_text=self.btngroup.button(id_).text()
         self.btngroup.idClicked.connect(handle_button_idclicked)
         self.setLayout(layout)
+    def setBold(self,choice):
+        for button in self.btngroup.buttons():
+            if button.text()==choice:
+                font = QFont()
+                font.setBold(True)
+                button.setFont(font)
 class DictationQuizPanel(QWidget):
     def __init__(self,progress,choices):
         super(DictationQuizPanel,self).__init__()
@@ -335,39 +355,43 @@ class DictationQuizPanel(QWidget):
             self.selected_text=self.btngroup.button(id_).text()
         self.btngroup.idClicked.connect(handle_button_idclicked)
         self.setLayout(layout)
+    def setBold(self,choice):
+        for button in self.btngroup.buttons():
+            if button.text()==choice:
+                font = QFont()
+                font.setBold(True)
+                button.setFont(font)
         
 if __name__ == '__main__':
     appctxt = QApplication([])       # 1. Instantiate ApplicationContext
-    main=MainPanel()
-    main.show()
-    pyttsx3.init()
-    try:
-        r=requests.get('http://time1909.beijing-time.org/time.asp',headers={'User-Agent':'Mozilla/5.0'})
-    except:
-        msg_box = QMessageBox(QMessageBox.Warning, "Error", "Internet Error!")
-        msg_box.exec_()
-        QCoreApplication.instance().quit()
-        sys.exit()
-    if r.status_code==200:
-        result=r.text
-        data=result.split(';')
-        year=data[1].split('=')[1]
-        month=data[2].split('=')[1]
-        day=data[3].split('=')[1]
-        if year=='2022' and month=='9' and (int(day)>=17 and int(day)<=30):
-            pass
-        else:
-            msg_box = QMessageBox(QMessageBox.Warning, "Error", "Trial expired!")
-            msg_box.exec_()
-            QCoreApplication.instance().quit()
-            sys.exit()
-    else:
-        msg_box = QMessageBox(QMessageBox.Warning, "Error", "Internet Error!")
-        msg_box.exec_()
-        QCoreApplication.instance().quit()
-        sys.exit()
-    nlp = en_core_web_lg.load()
-    df=pd.read_excel('wordlist.xlsx',sheet_name=None,header=None)
-    main.loaded()
-    exit_code = appctxt.exec()      # 2. Invoke appctxt.app.exec_()
+    firstLoad=True
+    while True:
+        main=MainPanel()
+        main.show()
+        if firstLoad:
+            pyttsx3.init()
+            nlp = en_core_web_lg.load()
+            if not os.path.exists('cache/cached_sheet.dat'):
+                df=pd.read_excel('wordlist.xlsx',sheet_name=None,header=None)
+                if not os.path.exists('cache/'):
+                    os.mkdir('cache')
+                with open('cache/cached_sheet.dat','wb') as fp:
+                    pickle.dump(df, fp)
+            else:
+                with open('cache/cached_sheet.dat','rb') as fp:
+                    df=pickle.load(fp)
+            firstLoad=False
+        main.loaded()
+        exit_code = appctxt.exec()
+        if not isRetest:
+            break
+        isRetest=False
+        id=None
+        error=None
+        dictation=None
+        test=None
+        overall=np.array([[0,0,0]])
+        score=0
+        test_idx=None
+        answers=None
     sys.exit(exit_code)
